@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.log
+# VS Code
+.vscode/
+# OS
+.DS_Store
+Thumbs.db
+# Data cache (keep only the two compact files we need)
+data/artifacts/*
+!data/artifacts/names_lookup_min.csv
+data/processed/*
+!data/processed/features_v1.csv.gz
+# env
+.env

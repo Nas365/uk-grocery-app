@@ -1,0 +1,168 @@
+<!-- what I'm doing: single-page UI with dropdowns (category/brand/size), intro at top, background image, clearer labels -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ app_title }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height:100%; margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .bg{
+      position:fixed; inset:0;
+      background:url('/static/grocery.jpg') center/cover no-repeat fixed;
+      filter:brightness(.55);
+      z-index:-1;
+    }
+    .card{
+      max-width: 980px; margin: 48px auto; padding: 24px 28px;
+      border-radius: 14px; background: rgba(255,255,255,0.92);
+      box-shadow: 0 8px 30px rgba(0,0,0,.18);
+    }
+    h1{ margin:0 0 12px 0; font-size: 28px; }
+    .muted{ color:#444a5; font-size: 14px; margin: 6px 0 18px; }
+    label{ display:block; font-weight:600; margin: 12px 0 6px; }
+    select, input {
+      width:100%; padding:10px; border:1px solid #c8cbd1; border-radius:10px; font-size:16px;
+    }
+    .grid{ display:grid; grid-template-columns: repeat(4,1fr); gap:12px; }
+    .grid > div{ display:flex; flex-direction:column; }
+    button{
+      cursor:pointer; border:0; padding:12px 16px; border-radius:10px;
+      font-weight:700; margin-top:14px; border:1px solid #334155; background:#334155; color:#fff;
+    }
+    table{ width:100%; border-collapse: collapse; margin-top:14px; }
+    th, td{ border-bottom:1px solid #e5e7eb; padding:10px; text-align:left; }
+    .small{ font-size: 13px; color:#334155; margin-top: 10px; }
+    .footer{ font-size: 12px; color:#1f2937; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="bg"></div>
+
+  <div class="card">
+    <h1>UK Grocery Recommender</h1>
+    <div class="muted">
+      This application recommends cheaper, similar items between Tesco and Sainsbury’s using real product listings scraped from their websites. No personal data is stored; requests are only used to serve results. Project by <em>Nasir Abubakar</em>.
+    </div>
+
+    <div class="grid">
+      <div>
+        <label>Category</label>
+        <select id="category"></select>
+      </div>
+      <div>
+        <label>Brand (optional)</label>
+        <select id="brand"></select>
+      </div>
+      <div>
+        <label>Target size in grams (optional)</label>
+        <select id="size"></select>
+      </div>
+      <div>
+        <label>Number of suggestions</label>
+        <select id="topn">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="15">15</option>
+        </select>
+      </div>
+    </div>
+
+    <button id="go">Recommend</button>
+
+    <div id="results" class="small">No results.</div>
+
+    <div class="footer">
+      <strong>Privacy.</strong> No personal data is stored. <strong>Intro.</strong> Results are computed from your locally-available dataset.
+    </div>
+  </div>
+
+  <script>
+    // what I'm doing: hydrate dropdowns from server-side maps
+    const categories = {{ categories | tojson }};
+    const brandsMap  = {{ brands_map | tojson }};
+    const sizesMap   = {{ sizes_map  | tojson }};
+
+    const $cat  = document.querySelector("#category");
+    const $brand= document.querySelector("#brand");
+    const $size = document.querySelector("#size");
+    const $topn = document.querySelector("#topn");
+    const $go   = document.querySelector("#go");
+    const $out  = document.querySelector("#results");
+
+    function setOptions(el, values, firstLabel){
+      el.innerHTML = "";
+      if (firstLabel){
+        const opt = document.createElement("option");
+        opt.value = ""; opt.textContent = firstLabel;
+        el.appendChild(opt);
+      }
+      values.forEach(v=>{
+        const opt = document.createElement("option");
+        opt.value = v; opt.textContent = v;
+        el.appendChild(opt);
+      });
+    }
+
+    function refreshBrandAndSize(){
+      const cat = $cat.value;
+      const brands = (brandsMap[cat] || []).slice(0,50);
+      setOptions($brand, brands, "Any brand");
+      const sizes = (sizesMap[cat] || []);
+      setOptions($size, sizes, "Any size");
+    }
+
+    // init
+    setOptions($cat, categories);
+    $cat.value = categories[0] || "";
+    refreshBrandAndSize();
+    $cat.addEventListener("change", refreshBrandAndSize);
+
+    function renderTable(rows){
+      if (!rows || !rows.length){
+        $out.textContent = "No results.";
+        return;
+      }
+      const header = `
+        <table><thead><tr>
+          <th>Product @ Sainsbury’s</th>
+          <th>Product @ Tesco</th>
+          <th>Cheapest retailer</th>
+          <th>Cheapest price (£)</th>
+          <th>Other price (£)</th>
+          <th>Saving (%)</th>
+        </tr></thead><tbody>`;
+      const body = rows.map(r=>`
+        <tr>
+          <td>${r.name_sainsburys ?? ""}</td>
+          <td>${r.name_tesco ?? ""}</td>
+          <td>${r.cheapest_retailer}</td>
+          <td>${r.cheapest_price?.toFixed ? r.cheapest_price.toFixed(2) : r.cheapest_price}</td>
+          <td>${r.other_price?.toFixed ? r.other_price.toFixed(2) : r.other_price}</td>
+          <td>${r.gap_pct}</td>
+        </tr>`).join("");
+      const end = "</tbody></table>";
+      $out.innerHTML = header + body + end;
+    }
+
+    async function ask(){
+      const payload = {
+        category: $cat.value,
+        brand: $brand.value || null,
+        size_grams: $size.value ? Number($size.value) : null,
+        top_n: Number($topn.value)
+      };
+      $out.textContent = "Loading…";
+      const res = await fetch("/api/recommend", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      const rows = await res.json();
+      renderTable(rows);
+    }
+
+    $go.addEventListener("click", ask);
+  </script>
+</body>
+</html>
