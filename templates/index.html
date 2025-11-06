@@ -1,4 +1,5 @@
-<!-- what I'm doing: single-page UI with dropdowns (category/brand/size), intro at top, background image, clearer labels -->
+<!-- what I'm doing: single-page UI with dropdowns (category/brand/size), intro at top,
+     background image, data-vintage badge, cleaner footer with attribution -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -19,7 +20,8 @@
       box-shadow: 0 8px 30px rgba(0,0,0,.18);
     }
     h1{ margin:0 0 12px 0; font-size: 28px; }
-    .muted{ color:#444a5; font-size: 14px; margin: 6px 0 18px; }
+    .muted{ color:#444a5; font-size: 14px; margin: 6px 0 6px; }
+    .badge { font-size: 12px; opacity: .9; margin: 0 0 18px 0; }
     label{ display:block; font-weight:600; margin: 12px 0 6px; }
     select, input {
       width:100%; padding:10px; border:1px solid #c8cbd1; border-radius:10px; font-size:16px;
@@ -33,7 +35,8 @@
     table{ width:100%; border-collapse: collapse; margin-top:14px; }
     th, td{ border-bottom:1px solid #e5e7eb; padding:10px; text-align:left; }
     .small{ font-size: 13px; color:#334155; margin-top: 10px; }
-    .footer{ font-size: 12px; color:#1f2937; margin-top: 12px; }
+    footer.footnote { margin-top: 16px; font-size: 12px; opacity: 0.85;
+                      display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -41,9 +44,11 @@
 
   <div class="card">
     <h1>UK Grocery Recommender</h1>
-    <div class="muted">
-      This application recommends cheaper, similar items between Tesco and Sainsbury’s using real product listings scraped from their websites. No personal data is stored; requests are only used to serve results. Project by <em>Nasir Abubakar</em>.
-    </div>
+    <p class="muted">
+      This application recommends cheaper, similar items between Tesco and Sainsbury’s using real product listings scraped from their websites.
+      No personal data is stored; requests are only used to serve results.
+    </p>
+    <div class="badge">Data last updated: <strong>{{ data_vintage }}</strong></div>
 
     <div class="grid">
       <div>
@@ -72,13 +77,14 @@
 
     <div id="results" class="small">No results.</div>
 
-    <div class="footer">
-      <strong>Privacy.</strong> No personal data is stored. <strong>Intro.</strong> Results are computed from your locally-available dataset.
-    </div>
+    <footer class="footnote">
+      <span>Privacy: No personal data is stored.</span>
+      <span>Project by <em>Nasir Abubakar</em></span>
+    </footer>
   </div>
 
   <script>
-    // what I'm doing: hydrate dropdowns from server-side maps
+    // hydrate dropdowns from server-side maps
     const categories = {{ categories | tojson }};
     const brandsMap  = {{ brands_map | tojson }};
     const sizesMap   = {{ sizes_map  | tojson }};

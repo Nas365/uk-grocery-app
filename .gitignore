@@ -1,19 +1,16 @@
-.venv/
+# Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.sqlite3
-*.log
+.venv/
+.env
+
+# Not needed at runtime
+data/artifacts/*
+data/processed/*
+
+# Keep only these runtime files:
+!data/artifacts/names_lookup_min.csv
+!data/processed/features_v1.csv.gz
+
 # VS Code
 .vscode/
-# OS
-.DS_Store
-Thumbs.db
-# Data cache (keep only the two compact files we need)
-data/artifacts/*
-!data/artifacts/names_lookup_min.csv
-data/processed/*
-!data/processed/features_v1.csv.gz
-# env
-.env

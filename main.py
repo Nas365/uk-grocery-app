@@ -1,24 +1,30 @@
-# what I'm doing: fastapi app that loads compact features, exposes options for the UI, and returns sanitized recommendations as JSON
+# what I'm doing: FastAPI app that loads compact features, exposes options for the UI,
+# returns sanitized recommendations as JSON, and shows a "data last updated" badge.
 
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-# what I'm doing: locate data folders relative to this file
+# --- locate data folders relative to this file ---
 ROOT = Path(__file__).parent.resolve()
 DATA = ROOT / "data"
 PROC = DATA / "processed"
 ART  = DATA / "artifacts"
 
+FEATURES_PKL = PROC / "features_v1.pkl"
+FEATURES_CSV = PROC / "features_v1.csv.gz"
+
 app = FastAPI(title="UK Grocery Recommender")
 
-# what I'm doing: mount static and templates
+# --- mount static and templates ---
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
@@ -26,17 +32,17 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 def _read_features() -> pd.DataFrame:
     # preference: pickle -> csv.gz
-    pkl = PROC / "features_v1.pkl"
-    csv = PROC / "features_v1.csv.gz"
-    if pkl.exists():
-        df = pd.read_pickle(pkl)
+    if FEATURES_PKL.exists():
+        df = pd.read_pickle(FEATURES_PKL)
     else:
-        df = pd.read_csv(csv, low_memory=False)
+        df = pd.read_csv(FEATURES_CSV, low_memory=False)
+
     # minimal schema guarantee
     need = ["category","brand","price_gbp_sainsburys","price_gbp_tesco","size_grams"]
     for c in need:
         if c not in df.columns:
             df[c] = np.nan
+
     # coerce
     df["size_grams"] = pd.to_numeric(df["size_grams"], errors="coerce")
     for c in ["price_gbp_sainsburys","price_gbp_tesco"]:
@@ -51,10 +57,19 @@ def _read_names_min() -> Optional[pd.DataFrame]:
         return d[keep]
     return None
 
-FE: pd.DataFrame  = _read_features()
-NAMES_MIN          = _read_names_min()
+# data vintage (file last modified time) for UI badge
+def get_data_vintage() -> str:
+    try:
+        ts = (FEATURES_PKL if FEATURES_PKL.exists() else FEATURES_CSV).stat().st_mtime
+        return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return "unknown"
 
-# what I'm doing: compute dropdown options (categories, brands per category, common sizes per category)
+FE: pd.DataFrame = _read_features()
+NAMES_MIN = _read_names_min()
+DATA_VINTAGE = get_data_vintage()
+
+# dropdown options (categories, brands per category, common sizes per category)
 def _build_options(fe: pd.DataFrame):
     categories: List[str] = sorted(fe["category"].dropna().astype(str).unique().tolist())
     brands_by_cat: Dict[str, List[str]] = {}
@@ -68,31 +83,24 @@ def _build_options(fe: pd.DataFrame):
         brands = sorted(brands)[:50]  # trim long lists
         brands_by_cat[cat] = brands
 
-        # suggest frequent sizes (rounded to nearest 50g), top 10
+        # suggest frequent sizes (rounded), top 12
         sizes = (
             sub["size_grams"].dropna()
-            .round(-1)  # smooth tiny noise
-            .round(-2) # nearest 100
+            .round(-1)
+            .round(-2)  # nearest 100g
             .astype(int)
         )
-        if not sizes.empty:
-            top_sizes = (
-                sizes.value_counts()
-                .sort_index()
-                .sort_values(ascending=False)
-                .head(12)
-                .index.astype(int)
-                .tolist()
-            )
-        else:
-            top_sizes = []
+        top_sizes = (
+            sizes.value_counts().sort_values(ascending=False).head(12).index.astype(int).tolist()
+            if not sizes.empty else []
+        )
         sizes_by_cat[cat] = top_sizes
 
     return categories, brands_by_cat, sizes_by_cat
 
 CATEGORIES, BRANDS_BY_CAT, SIZES_BY_CAT = _build_options(FE)
 
-# what I'm doing: display-name enrichment from names_min if available
+# display-name enrichment from names_min if available
 def _attach_display_names(df: pd.DataFrame) -> pd.DataFrame:
     d = df.copy()
     if NAMES_MIN is not None:
@@ -108,11 +116,10 @@ def _attach_display_names(df: pd.DataFrame) -> pd.DataFrame:
               .assign(size_txt=lambda x: x["size_grams"].fillna(0).round().astype(int).astype(str).replace("0",""))
               .apply(lambda r: f"{r['brand']} {r['category']} {r['size_txt']}g".strip(), axis=1)
         )
-        # beautify case
         d[col] = d[col].astype(str).str.replace("_"," ").str.title()
     return d
 
-# what I'm doing: safe JSON (no NaN/inf) + rounded prices
+# safe JSON (no NaN/inf) + rounded prices
 def _sanitize_for_json(df: pd.DataFrame) -> list[dict]:
     out = df.copy()
     for c in out.columns:
@@ -173,9 +180,9 @@ def _recommend(req: RecRequest) -> pd.DataFrame:
 
 # ---------- routes ----------
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    # what I'm doing: pass dropdown options into the template
+    # pass dropdown options into the template + data vintage for the badge
     return templates.TemplateResponse(
         "index.html",
         {
@@ -184,6 +191,7 @@ async def home(request: Request):
             "categories": CATEGORIES,
             "brands_map": BRANDS_BY_CAT,
             "sizes_map": SIZES_BY_CAT,
+            "data_vintage": DATA_VINTAGE,
         },
     )
 
