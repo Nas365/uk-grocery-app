@@ -1,0 +1,17 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    needs: []
+    steps:
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_HOOK_URL }}
+        run: |
+          [ -z "$HOOK" ] && echo "Missing RENDER_HOOK_URL secret" && exit 1
+          curl -fsS -X POST "$HOOK"
